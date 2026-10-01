@@ -2,14 +2,18 @@
 
 /* =========================================================
    Data
-   Each item: { id, name, category, level, onList, inBasket }
-   level is a number: 3 Full, 2 Half, 1 Low, 0 Out
+   Each item: { id, name, category, level, count, buy, onList, inBasket }
+   level: rough amount left — 3 Full, 2 Half, 1 Low, 0 Out
+   count: exact number you have, or null for items tracked by level
+   buy:   how many to get when it's on the list, or null for "any"
+          (kept after shopping, so it's remembered for next time)
    ========================================================= */
 
 const STORE_KEY = 'larder.v1';
 const PREFS_KEY = 'larder.prefs';
 const LEVELS = ['Out', 'Low', 'Half', 'Full'];   // index = level number
 const CATEGORIES = ['Fresh', 'Fridge', 'Freezer', 'Cupboard', 'Other'];
+const MAX = 999;
 
 let items = loadItems();
 let prefs = loadPrefs();
@@ -33,15 +37,27 @@ function clean(list) {
     if (seen.has(name.toLowerCase())) return [];
     seen.add(name.toLowerCase());
     const onList = x.onList === true;
+    const count = wholeNumber(x.count);
+    let buy = wholeNumber(x.buy);
+    if (buy === 0) buy = null;
+    if (count !== null && onList && buy === null) buy = 1;
     return [{
       id: typeof x.id === 'string' && x.id ? x.id : newId(),
       name,
       category: CATEGORIES.includes(x.category) ? x.category : 'Other',
       level: [0, 1, 2, 3].includes(x.level) ? x.level : 3,
+      count,
+      buy,
       onList,
       inBasket: onList && x.inBasket === true,
     }];
   });
+}
+
+// A whole number between 0 and MAX, or null if it isn't one
+function wholeNumber(v) {
+  const n = typeof v === 'number' ? v : parseInt(v, 10);
+  return Number.isInteger(n) && n >= 0 ? Math.min(n, MAX) : null;
 }
 
 function loadItems() {
@@ -65,7 +81,7 @@ function savePrefs() {
 
 function save() {
   try {
-    localStorage.setItem(STORE_KEY, JSON.stringify({ version: 1, items }));
+    localStorage.setItem(STORE_KEY, JSON.stringify({ version: 2, items }));
   } catch {
     showToast('Couldn’t save. Your phone’s storage may be full.');
   }
@@ -82,6 +98,7 @@ function change(mutate, message) {
 }
 
 const find = id => items.find(i => i.id === id);
+const counted = i => i.count !== null;
 const byName = (a, b) => a.name.localeCompare(b.name, 'en-GB', { sensitivity: 'base' });
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
@@ -103,6 +120,7 @@ const esc = s => String(s).replace(/[&<>"']/g, c =>
 const ICON = {
   check: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
   x: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  minus: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg>',
   plus: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
   more: '<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
   basket: filled => `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 9.5h17l-1.7 9a2 2 0 0 1-2 1.6H7.2a2 2 0 0 1-2-1.6z"${filled ? ' fill="currentColor"' : ''}/><path d="M8 9.5l4-5.5 4 5.5"/></svg>`,
@@ -151,14 +169,17 @@ function renderList() {
 }
 
 function listRow(i) {
+  const isCounted = counted(i);
+  const spoken = [isCounted ? '' : LEVELS[i.level], i.buy ? `buy ${i.buy}` : ''].filter(Boolean).join(', ');
   const remove = i.inBasket ? '' : `
     <button class="icon-btn" data-action="unlist" data-id="${i.id}" aria-label="Take ${esc(i.name)} off the list">${ICON.x}</button>`;
   return `
     <li class="row${i.inBasket ? ' got' : ''}">
       <button class="tick" data-action="tick" data-id="${i.id}" aria-pressed="${i.inBasket}">
         <span class="box" aria-hidden="true">${i.inBasket ? ICON.check : ''}</span>
-        <span class="name">${esc(i.name)}<span class="sr">, ${LEVELS[i.level]}</span></span>
-        ${dots(i.level)}
+        <span class="name">${esc(i.name)}${isCounted ? `<span class="have">Have ${i.count}</span>` : ''}${spoken ? `<span class="sr">, ${spoken}</span>` : ''}</span>
+        ${i.buy ? `<span class="qty" aria-hidden="true">×${i.buy}</span>` : ''}
+        ${isCounted ? '' : dots(i.level)}
       </button>${remove}
     </li>`;
 }
@@ -185,7 +206,7 @@ function renderStock() {
     html += `<h2 class="group">${cat}</h2><ul class="rows">${rows.map(stockRow).join('')}</ul>`;
   }
   if (items.length && items.length < 8 && !q) {
-    html += `<p class="hint">Tap the dots as you use something up. Tap the basket to put it on your shopping list. Tap a name to edit it.</p>`;
+    html += `<p class="hint">Tap the dots or number as you use something up. Tap the basket to put it on your shopping list. Tap a name to edit it, or to switch it to an exact count.</p>`;
   }
   $('#stock-body').innerHTML = html;
 }
@@ -194,8 +215,11 @@ function stockRow(i) {
   return `
     <li class="row">
       <button class="name-btn" data-action="edit" data-id="${i.id}"><span class="name">${esc(i.name)}</span></button>
-      <button class="level-btn" data-action="step" data-id="${i.id}"
-              aria-label="${esc(i.name)}: ${LEVELS[i.level]}. Tap to lower.">${dots(i.level)}</button>
+      ${counted(i)
+        ? `<button class="level-btn" data-action="use-one" data-id="${i.id}"
+                   aria-label="${esc(i.name)}: ${i.count} left. Tap to use one."><span class="num${i.count === 0 ? ' zero' : ''}" aria-hidden="true">${i.count}</span></button>`
+        : `<button class="level-btn" data-action="step" data-id="${i.id}"
+                   aria-label="${esc(i.name)}: ${LEVELS[i.level]}. Tap to lower.">${dots(i.level)}</button>`}
       <button class="icon-btn list-btn" data-action="toggle-list" data-id="${i.id}"
               aria-pressed="${i.onList}" aria-label="${esc(i.name)} on shopping list">${ICON.basket(i.onList)}</button>
     </li>`;
@@ -229,7 +253,7 @@ function show(name) {
 
 // Little pulse on an item's dots so you can see what just changed
 function bump(id) {
-  const el = document.querySelector(`[data-action="step"][data-id="${CSS.escape(id)}"]`);
+  const el = document.querySelector(`.level-btn[data-id="${CSS.escape(id)}"]`);
   if (!el) return;
   el.classList.add('bump');
   el.scrollIntoView({ block: 'nearest' });
@@ -242,14 +266,27 @@ function bump(id) {
 const sheet = $('#sheet');
 sheet.addEventListener('click', e => { if (e.target === sheet) sheet.close(); }); // tap outside closes
 
+function stepper(name, value, label) {
+  return `
+    <div class="stepper">
+      <button type="button" class="ghost" data-action="stepper" data-delta="-1" aria-label="${label}: one fewer">${ICON.minus}</button>
+      <input class="input" name="${name}" type="number" inputmode="numeric" min="0" max="${MAX}"
+             value="${value ?? ''}" aria-label="${label}">
+      <button type="button" class="ghost" data-action="stepper" data-delta="1" aria-label="${label}: one more">${ICON.plus}</button>
+    </div>`;
+}
+
 function openItemSheet(item, presetName = '') {
   const isNew = !item;
   const d = item || {
     name: presetName,
     category: prefs.lastCategory || 'Cupboard',
     level: 3,
+    count: null,
+    buy: null,
     onList: false,
   };
+  const isCounted = d.count !== null;
   // Only pop the keyboard up when you're about to type a name
   const focusName = isNew && !presetName;
 
@@ -273,10 +310,15 @@ function openItemSheet(item, presetName = '') {
 
       <fieldset>
         <legend>How much is left</legend>
-        <div class="segments">
+        <div class="segments two">
+          <label class="seg"><input type="radio" name="mode" value="level" ${isCounted ? '' : 'checked'}><span>Rough level</span></label>
+          <label class="seg"><input type="radio" name="mode" value="count" ${isCounted ? 'checked' : ''}><span>Exact count</span></label>
+        </div>
+        <div class="segments" data-panel="level">
           ${[3, 2, 1, 0].map(l => `
             <label class="seg"><input type="radio" name="level" value="${l}" ${l === d.level ? 'checked' : ''}><span>${dots(l)}${LEVELS[l]}</span></label>`).join('')}
         </div>
+        <div data-panel="count">${stepper('count', d.count ?? 0, 'How many you have')}</div>
       </fieldset>
 
       <label class="switch">
@@ -284,6 +326,11 @@ function openItemSheet(item, presetName = '') {
         <span class="track" aria-hidden="true"></span>
         <span>On shopping list</span>
       </label>
+
+      <div class="field buy" data-panel="buy">
+        <span>How many to buy</span>
+        ${stepper('buy', d.buy, 'How many to buy')}
+      </div>
 
       <p class="form-error" role="alert"></p>
 
@@ -295,6 +342,22 @@ function openItemSheet(item, presetName = '') {
     </form>`;
 
   const form = sheet.querySelector('form');
+  const panel = name => form.querySelector(`[data-panel="${name}"]`);
+
+  // Show the level picker or the count stepper, and the buy stepper only when it's on the list.
+  // Counted items always need a buy amount (so "Mark bought" knows what to add); level items can leave it blank.
+  const sync = () => {
+    const mode = form.elements.mode.value;
+    const onList = form.elements.onList.checked;
+    panel('level').hidden = mode !== 'level';
+    panel('count').hidden = mode !== 'count';
+    panel('buy').hidden = !onList;
+    form.elements.buy.placeholder = mode === 'count' ? '' : 'Any amount';
+    if (mode === 'count' && onList && !form.elements.buy.value) form.elements.buy.value = 1;
+  };
+  form.addEventListener('change', sync);
+  sync();
+
   form.addEventListener('submit', e => {
     e.preventDefault();
     const f = new FormData(form);
@@ -305,11 +368,19 @@ function openItemSheet(item, presetName = '') {
     if (!name) { error.textContent = 'Give the item a name.'; return; }
     if (clash) { error.textContent = `You already have “${clash.name}”. Edit that one instead.`; return; }
 
+    const onList = f.get('onList') === 'on';
+    const count = f.get('mode') === 'count' ? (wholeNumber(f.get('count')) ?? 0) : null;
+    let buy = wholeNumber(f.get('buy'));
+    if (buy === 0) buy = null;
+    if (count !== null && onList && buy === null) buy = 1;
+
     const fields = {
       name,
       category: f.get('category'),
       level: Number(f.get('level')),
-      onList: f.get('onList') === 'on',
+      count,
+      buy,
+      onList,
     };
     prefs.lastCategory = fields.category;
     savePrefs();
@@ -350,7 +421,7 @@ function openSettings() {
 }
 
 function exportBackup() {
-  const data = { app: 'larder', version: 1, saved: new Date().toISOString(), items };
+  const data = { app: 'larder', version: 2, saved: new Date().toISOString(), items };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
@@ -428,7 +499,12 @@ document.addEventListener('click', e => {
     case 'done': {          // shopping list: everything in the basket is now Full
       const bought = items.filter(i => i.onList && i.inBasket);
       change(() => {
-        for (const i of bought) { i.level = 3; i.onList = false; i.inBasket = false; }
+        for (const i of bought) {
+          if (counted(i)) i.count = Math.min(MAX, i.count + (i.buy || 1));  // add what you bought
+          else i.level = 3;                                                // back to Full
+          i.onList = false;
+          i.inBasket = false;
+        }
       }, `Marked ${bought.length} bought`);
       break;
     }
@@ -438,12 +514,30 @@ document.addEventListener('click', e => {
       bump(item.id);
       break;
 
+    case 'use-one':         // inventory: counted item, one fewer (stops at 0)
+      if (item.count > 0) {
+        change(() => { item.count -= 1; });
+        bump(item.id);
+      }
+      break;
+
     case 'toggle-list':     // inventory: on / off the shopping list
       change(() => {
         item.onList = !item.onList;
         if (!item.onList) item.inBasket = false;
+        else if (counted(item) && !item.buy) item.buy = 1;
       });
       break;
+
+    case 'stepper': {       // item sheet: − / + buttons beside a number box
+      const input = el.parentElement.querySelector('input');
+      const isBuy = input.name === 'buy';
+      const countMode = el.form.elements.mode.value === 'count';
+      const next = (wholeNumber(input.value) ?? 0) + Number(el.dataset.delta);
+      if (isBuy && next < 1) input.value = countMode ? 1 : '';   // blank buy = "any amount"
+      else input.value = Math.max(0, Math.min(MAX, next));
+      break;
+    }
 
     case 'edit':
       openItemSheet(item);

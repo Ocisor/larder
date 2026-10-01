@@ -1,7 +1,7 @@
 // Service worker: keeps a copy of the app's files on the phone so it opens offline.
 // IMPORTANT: change this version string every time you edit any app file,
 // otherwise phones keep using the old cached copy.
-const CACHE = 'larder-v1';
+const CACHE = 'larder-v2';
 
 const FILES = [
   './',
