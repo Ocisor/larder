@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <!-- interactive-widget=resizes-content: when the keyboard opens, the page shrinks
+       so the bottom sheet sits above the keyboard instead of behind it -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#1e1e2e" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#eff1f5" media="(prefers-color-scheme: light)">
+  <title>Larder</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/favicon.png">
+  <link rel="preload" href="fonts/doto.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main>
+    <section id="view-list" aria-labelledby="list-title">
+      <header class="top">
+        <div>
+          <h1 id="list-title" class="title">To buy</h1>
+          <p class="count" id="list-count"></p>
+        </div>
+      </header>
+      <div id="list-body"></div>
+    </section>
+
+    <section id="view-stock" aria-labelledby="stock-title" hidden>
+      <header class="top">
+        <div>
+          <h1 id="stock-title" class="title">Inventory</h1>
+          <p class="count" id="stock-count"></p>
+        </div>
+        <button class="icon-btn" data-action="settings" aria-label="Backup"></button>
+      </header>
+      <input id="search" class="input" type="search" placeholder="Find or add an item"
+             autocomplete="off" autocapitalize="sentences" enterkeyhint="go" aria-label="Find or add an item">
+      <div id="stock-body"></div>
+    </section>
+  </main>
+
+  <div class="dock" id="dock">
+    <button class="primary" id="done-shopping" data-action="done" hidden></button>
+    <nav class="tabs" aria-label="Screens">
+      <button class="tab" data-action="tab" data-view="list">Shopping list <span class="badge" id="tab-badge"></span></button>
+      <button class="tab" data-action="tab" data-view="stock">Inventory</button>
+    </nav>
+  </div>
+
+  <dialog id="sheet"></dialog>
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
